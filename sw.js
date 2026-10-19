@@ -3,15 +3,19 @@
 // Caching strategy: App Shell (Cache First) + API (Network Only)
 // ============================================================
 
-const CACHE_NAME = 'taskflow-v1';
-const STATIC_CACHE = 'taskflow-static-v1';
-const CDN_CACHE = 'taskflow-cdn-v1';
+const CACHE_NAME = 'taskflow-v2';
+const STATIC_CACHE = 'taskflow-static-v2';
+const CDN_CACHE = 'taskflow-cdn-v2';
 
 // App shell files to pre-cache on install
 const APP_SHELL = [
   './',
   './index.html',
   './manifest.json',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
+  './icons/icon-maskable-192.png',
+  './icons/icon-maskable-512.png',
   './icons/icon.svg',
   './icons/icon-maskable.svg'
 ];
