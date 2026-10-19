@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366f1"/>
+      <stop offset="100%" style="stop-color:#4f46e5"/>
+    </linearGradient>
+  </defs>
+  <!-- Full background (no rounded corners for maskable) -->
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <!-- Safe zone: inner 80% = 409.6px, centered at 256
+       padding = 51.2px each side
+       Content area: ~51 to ~461 -->
+  <!-- Checkbox body — scaled down to fit safe zone -->
+  <rect x="152" y="172" width="185" height="185" rx="30" ry="30"
+        fill="none" stroke="white" stroke-width="24" opacity="0.9"/>
+  <!-- Top-right flap -->
+  <line x1="337" y1="172" x2="370" y2="140"
+        stroke="white" stroke-width="24" stroke-linecap="round" opacity="0.9"/>
+  <!-- Checkmark -->
+  <polyline points="203,273 240,313 370,168"
+            fill="none" stroke="white" stroke-width="32" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Task lines -->
+  <line x1="165" y1="388" x2="295" y2="388" stroke="white" stroke-width="14" stroke-linecap="round" opacity="0.4"/>
+  <line x1="165" y1="420" x2="260" y2="420" stroke="white" stroke-width="14" stroke-linecap="round" opacity="0.25"/>
+</svg>

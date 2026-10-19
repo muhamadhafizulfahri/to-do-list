@@ -1,0 +1,1413 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TaskFlow — Smart To-Do List</title>
+  <!-- PWA Meta Tags -->
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#4f46e5">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="TaskFlow">
+  <link rel="apple-touch-icon" href="./icons/icon.svg">
+  <link rel="icon" type="image/svg+xml" href="./icons/icon.svg">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✅</text></svg>">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50:'#eef2ff',100:'#e0e7ff',200:'#c7d2fe',300:'#a5b4fc',400:'#818cf8',500:'#6366f1',600:'#4f46e5',700:'#4338ca',800:'#3730a3',900:'#312e81' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { box-sizing: border-box; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+    .dark ::-webkit-scrollbar-thumb { background: #374151; }
+
+    @keyframes slideIn { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+    @keyframes scaleIn { from { opacity:0; transform:scale(0.95); } to { opacity:1; transform:scale(1); } }
+    @keyframes checkmark { 0%{transform:scale(0)} 50%{transform:scale(1.2)} 100%{transform:scale(1)} }
+    @keyframes pulse-ring { 0%{transform:scale(1);opacity:1} 100%{transform:scale(1.4);opacity:0} }
+    @keyframes confetti { 0%{opacity:1;transform:translateY(0) rotate(0deg)} 100%{opacity:0;transform:translateY(-120px) rotate(720deg)} }
+    @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
+
+    .task-enter { animation: slideIn 0.3s ease-out; }
+    .modal-enter { animation: scaleIn 0.2s ease-out; }
+    .fade-in { animation: fadeIn 0.3s ease-out; }
+    .check-animate { animation: checkmark 0.3s ease-out; }
+    .shake { animation: shake 0.3s ease-out; }
+
+    .dragging { opacity:0.5; transform:scale(0.98); }
+    .drag-over { border-color:#6366f1 !important; background:rgba(99,102,241,0.05); }
+
+    .custom-check { width:22px;height:22px;border-radius:50%;border:2px solid #d1d5db;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0; }
+    .dark .custom-check { border-color:#4b5563; }
+    .custom-check:hover { border-color:#6366f1; }
+    .custom-check.checked { background:#6366f1;border-color:#6366f1; }
+    .custom-check.checked svg { display:block; }
+    .custom-check svg { display:none;color:white; }
+
+    .priority-high { border-left:3px solid #ef4444; }
+    .priority-medium { border-left:3px solid #f59e0b; }
+    .priority-low { border-left:3px solid #22c55e; }
+
+    .cat-work { background:#dbeafe;color:#1d4ed8; }
+    .cat-personal { background:#fce7f3;color:#be185d; }
+    .cat-shopping { background:#d1fae5;color:#059669; }
+    .cat-health { background:#fef3c7;color:#d97706; }
+    .cat-study { background:#ede9fe;color:#7c3aed; }
+    .cat-other { background:#f3f4f6;color:#6b7280; }
+    .dark .cat-work { background:#1e3a5f;color:#93c5fd; }
+    .dark .cat-personal { background:#4a1942;color:#f9a8d4; }
+    .dark .cat-shopping { background:#064e3b;color:#6ee7b7; }
+    .dark .cat-health { background:#78350f;color:#fcd34d; }
+    .dark .cat-study { background:#3b0764;color:#c4b5fd; }
+    .dark .cat-other { background:#374151;color:#9ca3af; }
+
+    .tab-active { color:#6366f1;border-bottom:2px solid #6366f1;font-weight:600; }
+    .progress-ring { transform:rotate(-90deg); }
+    .progress-ring-circle { transition:stroke-dashoffset 0.5s ease-out; }
+    .confetti-particle { position:fixed;width:8px;height:8px;border-radius:2px;animation:confetti 1s ease-out forwards;pointer-events:none;z-index:9999; }
+
+    .sync-dot { width:8px;height:8px;border-radius:50%;position:relative; }
+    .sync-dot::after { content:'';position:absolute;inset:-3px;border-radius:50%;animation:pulse-ring 1.5s infinite; }
+    .sync-dot.online { background:#22c55e; }
+    .sync-dot.online::after { border:2px solid #22c55e; }
+    .sync-dot.offline { background:#ef4444; }
+    .sync-dot.offline::after { border:2px solid #ef4444; }
+    .sync-dot.syncing { background:#f59e0b; }
+    .sync-dot.syncing::after { border:2px solid #f59e0b; }
+
+    .password-toggle { position:absolute;right:12px;top:50%;transform:translateY(-50%);cursor:pointer;color:#9ca3af; }
+    .password-toggle:hover { color:#6b7280; }
+
+    input[type="date"]::-webkit-calendar-picker-indicator { cursor:pointer; }
+    .dark input[type="date"]::-webkit-calendar-picker-indicator { filter:invert(0.7); }
+
+    .loading-spinner { border:3px solid rgba(99,102,241,0.2);border-top:3px solid #6366f1;border-radius:50%;width:20px;height:20px;animation:spin 0.8s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+  </style>
+</head>
+<body class="bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 antialiased min-h-screen transition-colors duration-300">
+
+<!-- ==================== SETUP SCREEN ==================== -->
+<div id="setupScreen" class="hidden min-h-screen flex items-center justify-center p-4">
+  <div class="max-w-md w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-8 shadow-xl text-center">
+    <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-brand-600 flex items-center justify-center shadow-lg">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+    </div>
+    <h1 class="text-2xl font-bold mb-2">Setup TaskFlow</h1>
+    <p class="text-gray-500 dark:text-gray-400 text-sm mb-6">Konfigurasi Supabase diperlukan sebelum menggunakan aplikasi.</p>
+    <div class="bg-gray-50 dark:bg-gray-800 rounded-xl p-4 text-left text-sm space-y-3 mb-6">
+      <p><strong>1.</strong> Buat project di <a href="https://supabase.com" target="_blank" class="text-brand-600 hover:underline">supabase.com</a></p>
+      <p><strong>2.</strong> Jalankan <code class="bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded text-xs">setup.sql</code> di SQL Editor</p>
+      <p><strong>3.</strong> Buka file <code class="bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded text-xs">index.html</code> dan ubah:</p>
+      <pre class="bg-gray-200 dark:bg-gray-700 rounded-lg p-3 text-xs overflow-x-auto"><code>SUPABASE_URL = 'https://xxx.supabase.co'
+SUPABASE_ANON_KEY = 'eyJ...'</code></pre>
+    </div>
+    <p class="text-gray-400 text-xs">Lihat <code>README.md</code> untuk panduan lengkap.</p>
+  </div>
+</div>
+
+<!-- ==================== AUTH SCREEN ==================== -->
+<div id="authScreen" class="hidden min-h-screen flex items-center justify-center p-4">
+  <div class="max-w-md w-full">
+    <!-- Branding -->
+    <div class="text-center mb-8">
+      <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-brand-600 flex items-center justify-center shadow-lg shadow-brand-600/30">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+      </div>
+      <h1 class="text-3xl font-bold tracking-tight">TaskFlow</h1>
+      <p class="text-gray-500 dark:text-gray-400 text-sm mt-1">Kelola tugasmu dari mana saja</p>
+    </div>
+
+    <div class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-xl overflow-hidden">
+      <!-- Auth Tabs -->
+      <div class="flex border-b border-gray-200 dark:border-gray-800">
+        <button onclick="setAuthTab('login')" id="authTabLogin" class="flex-1 py-3 text-sm font-medium text-center transition-colors border-b-2 border-brand-600 text-brand-600">Masuk</button>
+        <button onclick="setAuthTab('register')" id="authTabRegister" class="flex-1 py-3 text-sm font-medium text-center transition-colors border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">Daftar</button>
+      </div>
+
+      <div class="p-6">
+        <!-- Error/Success Messages -->
+        <div id="authMessage" class="hidden mb-4 rounded-xl px-4 py-3 text-sm"></div>
+
+        <!-- Login Form -->
+        <form id="loginForm" onsubmit="handleLogin(event)" class="space-y-4">
+          <div>
+            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">Email</label>
+            <input id="loginEmail" type="email" required placeholder="nama@email.com"
+              class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">Password</label>
+            <div class="relative">
+              <input id="loginPassword" type="password" required placeholder="••••••••" minlength="6"
+                class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition pr-10">
+              <button type="button" onclick="togglePasswordVisibility('loginPassword', this)" class="password-toggle">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+          <button type="submit" id="loginBtn" class="w-full py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-sm font-medium transition shadow-sm flex items-center justify-center gap-2">
+            <span>Masuk</span>
+          </button>
+          <button type="button" onclick="showResetPassword()" class="w-full text-xs text-gray-500 hover:text-brand-600 transition text-center">
+            Lupa password?
+          </button>
+        </form>
+
+        <!-- Register Form -->
+        <form id="registerForm" onsubmit="handleRegister(event)" class="space-y-4 hidden">
+          <div>
+            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">Nama Lengkap</label>
+            <input id="registerName" type="text" required placeholder="John Doe"
+              class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">Email</label>
+            <input id="registerEmail" type="email" required placeholder="nama@email.com"
+              class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">Password</label>
+            <div class="relative">
+              <input id="registerPassword" type="password" required placeholder="Minimal 6 karakter" minlength="6"
+                class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition pr-10">
+              <button type="button" onclick="togglePasswordVisibility('registerPassword', this)" class="password-toggle">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">Konfirmasi Password</label>
+            <input id="registerPasswordConfirm" type="password" required placeholder="Ulangi password" minlength="6"
+              class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition">
+          </div>
+          <button type="submit" id="registerBtn" class="w-full py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-sm font-medium transition shadow-sm flex items-center justify-center gap-2">
+            <span>Buat Akun</span>
+          </button>
+        </form>
+
+        <!-- Reset Password Form -->
+        <form id="resetForm" onsubmit="handleResetPassword(event)" class="space-y-4 hidden">
+          <p class="text-sm text-gray-500 dark:text-gray-400">Masukkan email akun kamu. Kami akan kirim link untuk reset password.</p>
+          <div>
+            <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">Email</label>
+            <input id="resetEmail" type="email" required placeholder="nama@email.com"
+              class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition">
+          </div>
+          <button type="submit" id="resetBtn" class="w-full py-2.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-sm font-medium transition shadow-sm flex items-center justify-center gap-2">
+            <span>Kirim Link Reset</span>
+          </button>
+          <button type="button" onclick="setAuthTab('login')" class="w-full text-xs text-gray-500 hover:text-brand-600 transition text-center">
+            ← Kembali ke Masuk
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Dark mode toggle on auth -->
+    <div class="text-center mt-6">
+      <button onclick="toggleDarkMode()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition" title="Toggle dark mode">
+        <svg id="authThemeIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== MAIN APP ==================== -->
+<div id="appScreen" class="hidden">
+
+  <!-- Top Bar -->
+  <header class="sticky top-0 z-40 backdrop-blur-md bg-white/85 dark:bg-gray-950/85 border-b border-gray-200 dark:border-gray-800">
+    <div class="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-brand-600 flex items-center justify-center shadow-lg">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold tracking-tight">TaskFlow</h1>
+          <p class="text-gray-500 dark:text-gray-400 text-xs" id="dateDisplay"></p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <!-- Sync Status -->
+        <div class="flex items-center gap-1.5 tooltip" id="syncStatus" data-tip="Tersinkron">
+          <div class="sync-dot online" id="syncDot"></div>
+          <span class="text-xs text-gray-500 dark:text-gray-400 hidden sm:inline" id="syncLabel">Sync</span>
+        </div>
+        <!-- Dark Mode -->
+        <button onclick="toggleDarkMode()" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition" title="Toggle dark mode">
+          <svg id="themeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+          </svg>
+        </button>
+        <!-- User Menu -->
+        <div class="relative" id="userMenuContainer">
+          <button onclick="toggleUserMenu()" class="flex items-center gap-2 p-1.5 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition">
+            <div id="userAvatar" class="w-8 h-8 rounded-full bg-brand-600 text-white flex items-center justify-center text-sm font-bold">?</div>
+          </button>
+          <div id="userMenu" class="hidden absolute right-0 top-full mt-2 w-64 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl shadow-xl p-2 z-50">
+            <div class="px-3 py-2 border-b border-gray-100 dark:border-gray-800 mb-1">
+              <p class="text-sm font-medium truncate" id="userMenuName">User</p>
+              <p class="text-xs text-gray-500 truncate" id="userMenuEmail">user@email.com</p>
+            </div>
+            <button onclick="handleLogout()" class="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+              Keluar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-3xl mx-auto px-4 py-6 pb-32">
+    <!-- Loading Overlay -->
+    <div id="appLoading" class="flex items-center justify-center py-20">
+      <div class="text-center">
+        <div class="loading-spinner mx-auto mb-3"></div>
+        <p class="text-sm text-gray-500">Memuat tugas...</p>
+      </div>
+    </div>
+
+    <div id="appContent" class="hidden">
+      <!-- Progress Section -->
+      <div class="mb-6 fade-in">
+        <div class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-5 shadow-sm">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-3">
+              <svg class="progress-ring" width="48" height="48">
+                <circle cx="24" cy="24" r="20" stroke="#e5e7eb" stroke-width="4" fill="none" class="dark:stroke-gray-700"/>
+                <circle id="progressCircle" class="progress-ring-circle" cx="24" cy="24" r="20" stroke="#6366f1" stroke-width="4" fill="none" stroke-dasharray="125.66" stroke-dashoffset="125.66" stroke-linecap="round"/>
+              </svg>
+              <div>
+                <p class="font-semibold text-sm">Progress Hari Ini</p>
+                <p class="text-gray-500 dark:text-gray-400 text-xs" id="progressText">0 dari 0 tugas selesai</p>
+              </div>
+            </div>
+            <span id="progressPercent" class="text-2xl font-bold text-brand-600">0%</span>
+          </div>
+          <div class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+            <div id="progressBar" class="h-full bg-brand-600 rounded-full transition-all duration-500 ease-out" style="width:0%"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Stats -->
+      <div class="grid grid-cols-4 gap-3 mb-6">
+        <div class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-center shadow-sm">
+          <p class="text-xl font-bold" id="statTotal">0</p>
+          <p class="text-gray-500 dark:text-gray-400 text-xs">Total</p>
+        </div>
+        <div class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-center shadow-sm">
+          <p class="text-xl font-bold text-amber-500" id="statPending">0</p>
+          <p class="text-gray-500 dark:text-gray-400 text-xs">Pending</p>
+        </div>
+        <div class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-center shadow-sm">
+          <p class="text-xl font-bold text-green-500" id="statDone">0</p>
+          <p class="text-gray-500 dark:text-gray-400 text-xs">Selesai</p>
+        </div>
+        <div class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-3 text-center shadow-sm">
+          <p class="text-xl font-bold text-red-500" id="statOverdue">0</p>
+          <p class="text-gray-500 dark:text-gray-400 text-xs">Terlambat</p>
+        </div>
+      </div>
+
+      <!-- Search & Filter Bar -->
+      <div class="mb-4 flex flex-col sm:flex-row gap-3">
+        <div class="flex-1 relative">
+          <svg class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input id="searchInput" type="text" placeholder="Cari tugas... (Ctrl+K)"
+            class="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition">
+        </div>
+        <div class="flex gap-2">
+          <select id="filterCategory" class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer">
+            <option value="all">📁 Semua</option>
+            <option value="work">💼 Kerja</option>
+            <option value="personal">🏠 Pribadi</option>
+            <option value="shopping">🛒 Belanja</option>
+            <option value="health">💪 Kesehatan</option>
+            <option value="study">📚 Belajar</option>
+            <option value="other">📌 Lainnya</option>
+          </select>
+          <select id="filterPriority" class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer">
+            <option value="all">⚡ Semua</option>
+            <option value="high">🔴 Tinggi</option>
+            <option value="medium">🟡 Sedang</option>
+            <option value="low">🟢 Rendah</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Tab Bar -->
+      <div class="flex border-b border-gray-200 dark:border-gray-800 mb-4 gap-1">
+        <button onclick="setTab('all')" class="tab-btn px-4 py-2 text-sm transition-colors text-gray-500 hover:text-gray-700 dark:hover:text-gray-300" data-tab="all">Semua</button>
+        <button onclick="setTab('active')" class="tab-btn px-4 py-2 text-sm transition-colors text-gray-500 hover:text-gray-700 dark:hover:text-gray-300" data-tab="active">Aktif</button>
+        <button onclick="setTab('completed')" class="tab-btn px-4 py-2 text-sm transition-colors text-gray-500 hover:text-gray-700 dark:hover:text-gray-300" data-tab="completed">Selesai</button>
+      </div>
+
+      <!-- Sort controls -->
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-gray-500">Urutkan:</span>
+          <select id="sortSelect" class="bg-transparent text-xs focus:outline-none cursor-pointer border-none">
+            <option value="newest">Terbaru</option>
+            <option value="oldest">Terlama</option>
+            <option value="priority">Prioritas</option>
+            <option value="dueDate">Deadline</option>
+            <option value="alphabetical">A-Z</option>
+          </select>
+        </div>
+        <button id="clearCompleted" onclick="clearCompleted()" class="text-xs text-gray-500 hover:text-red-500 transition-colors hidden">🗑️ Hapus selesai</button>
+      </div>
+
+      <!-- Task List -->
+      <div id="taskList" class="space-y-2 mb-4"></div>
+
+      <!-- Empty State -->
+      <div id="emptyState" class="hidden text-center py-16 fade-in">
+        <div class="text-5xl mb-4">📝</div>
+        <p class="text-gray-500 text-sm font-medium">Belum ada tugas</p>
+        <p class="text-gray-400 text-xs mt-1">Klik tombol + untuk menambahkan tugas baru</p>
+      </div>
+
+      <!-- No Results State -->
+      <div id="noResults" class="hidden text-center py-16 fade-in">
+        <div class="text-5xl mb-4">🔍</div>
+        <p class="text-gray-500 text-sm font-medium">Tidak ditemukan</p>
+        <p class="text-gray-400 text-xs mt-1">Coba ubah kata kunci pencarian</p>
+      </div>
+    </div>
+  </main>
+
+  <!-- FAB -->
+  <button onclick="openModal()"
+    class="fixed bottom-6 right-6 w-14 h-14 rounded-2xl bg-brand-600 text-white shadow-lg shadow-brand-600/30 hover:shadow-xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center z-30"
+    title="Tambah tugas baru (N)">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
+</div>
+
+<!-- ==================== TASK MODAL ==================== -->
+<div id="modalOverlay" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick="closeModal()"></div>
+  <div class="modal-enter relative w-full sm:max-w-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-t-2xl sm:rounded-2xl shadow-2xl p-6 max-h-[85vh] overflow-y-auto">
+    <div class="flex items-center justify-between mb-5">
+      <h2 id="modalTitle" class="text-lg font-bold">Tugas Baru</h2>
+      <button onclick="closeModal()" class="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="space-y-4">
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1.5">Judul Tugas *</label>
+        <input id="taskTitle" type="text" placeholder="Apa yang perlu dilakukan?"
+          class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 transition" maxlength="100">
+        <p class="text-xs text-gray-400 mt-1 text-right"><span id="titleCharCount">0</span>/100</p>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1.5">Deskripsi</label>
+        <textarea id="taskDesc" placeholder="Detail tambahan (opsional)..." rows="3"
+          class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 transition resize-none" maxlength="500"></textarea>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1.5">Kategori</label>
+          <select id="taskCategory" class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer">
+            <option value="personal">🏠 Pribadi</option>
+            <option value="work">💼 Kerja</option>
+            <option value="shopping">🛒 Belanja</option>
+            <option value="health">💪 Kesehatan</option>
+            <option value="study">📚 Belajar</option>
+            <option value="other">📌 Lainnya</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1.5">Prioritas</label>
+          <select id="taskPriority" class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer">
+            <option value="medium">🟡 Sedang</option>
+            <option value="high">🔴 Tinggi</option>
+            <option value="low">🟢 Rendah</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1.5">Deadline</label>
+        <input id="taskDueDate" type="date" class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-500 mb-1.5">Sub-tugas</label>
+        <div id="subtaskList" class="space-y-2 mb-2"></div>
+        <div class="flex gap-2">
+          <input id="subtaskInput" type="text" placeholder="Tambah sub-tugas..."
+            class="flex-1 px-4 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 transition" maxlength="60">
+          <button onclick="addSubtask()" class="px-3 py-2 bg-brand-600 text-white rounded-xl text-sm font-medium hover:opacity-90 transition">+</button>
+        </div>
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button onclick="closeModal()" class="flex-1 py-2.5 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition">Batal</button>
+        <button onclick="saveTask()" id="saveTaskBtn" class="flex-1 py-2.5 bg-brand-600 text-white rounded-xl text-sm font-medium hover:opacity-90 transition shadow-sm flex items-center justify-center gap-2">
+          <span>💾 Simpan</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== DELETE MODAL ==================== -->
+<div id="deleteModal" class="hidden fixed inset-0 z-50 flex items-center justify-center">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick="closeDeleteModal()"></div>
+  <div class="modal-enter relative bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
+    <div class="text-center">
+      <div class="text-4xl mb-3">⚠️</div>
+      <h3 class="font-bold text-lg mb-2">Hapus Tugas?</h3>
+      <p class="text-gray-500 text-sm mb-5" id="deleteTaskName">Tugas ini akan dihapus secara permanen.</p>
+      <div class="flex gap-3">
+        <button onclick="closeDeleteModal()" class="flex-1 py-2.5 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition">Batal</button>
+        <button onclick="confirmDelete()" class="flex-1 py-2.5 bg-red-500 text-white rounded-xl text-sm font-medium hover:bg-red-600 transition">Hapus</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== TOAST ==================== -->
+<div id="toast" class="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 hidden">
+  <div class="bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 px-5 py-2.5 rounded-full text-sm font-medium shadow-lg">
+    <span id="toastMsg"></span>
+  </div>
+</div>
+
+<!-- ==================== JAVASCRIPT ==================== -->
+<script>
+// ============================================================
+// CONFIG — Ganti dengan URL dan Key dari Supabase project kamu
+// ============================================================
+const SUPABASE_URL = 'https://fpwgttmjdxfgdzkzzezj.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZwd2d0dG1qZHhmZ2R6a3p6ZXpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIzODAxMjIsImV4cCI6MjEwNzk1NjEyMn0.450FuvUGn64BbExAWe6ezWlyB20V-PYPJ8RrpYtU8ys';
+// ============================================================
+
+// ===== SUPABASE INIT =====
+let db = null;
+const isConfigured = SUPABASE_URL !== 'YOUR_SUPABASE_URL' && SUPABASE_ANON_KEY !== 'YOUR_SUPABASE_ANON_KEY';
+
+if (isConfigured) {
+  const { createClient } = supabase;
+  db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+}
+
+// ===== STATE =====
+let tasks = [];
+let currentUser = null;
+let currentTab = 'all';
+let editingId = null;
+let deleteId = null;
+let tempSubtasks = [];
+let draggedId = null;
+let realtimeChannel = null;
+let isSyncing = false;
+
+const CATEGORIES = {
+  work:     { label:'Kerja',     emoji:'💼' },
+  personal: { label:'Pribadi',   emoji:'🏠' },
+  shopping: { label:'Belanja',   emoji:'🛒' },
+  health:   { label:'Kesehatan', emoji:'💪' },
+  study:    { label:'Belajar',   emoji:'📚' },
+  other:    { label:'Lainnya',   emoji:'📌' }
+};
+
+// ===== DARK MODE =====
+function initDarkMode() {
+  const saved = localStorage.getItem('taskflow_theme');
+  if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+    document.documentElement.classList.add('dark');
+  }
+  updateThemeIcon();
+}
+
+function toggleDarkMode() {
+  document.documentElement.classList.toggle('dark');
+  localStorage.setItem('taskflow_theme', document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+  updateThemeIcon();
+}
+
+function updateThemeIcon() {
+  const isDark = document.documentElement.classList.contains('dark');
+  const sunSvg = '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
+  const moonSvg = '<path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>';
+  ['themeIcon', 'authThemeIcon'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = isDark ? sunSvg : moonSvg;
+  });
+}
+
+// ===== INIT =====
+async function init() {
+  initDarkMode();
+
+  if (!isConfigured) {
+    showScreen('setup');
+    return;
+  }
+
+  // Check existing session
+  const { data: { session } } = await db.auth.getSession();
+  if (session) {
+    currentUser = session.user;
+    showScreen('app');
+    await loadAndRender();
+    subscribeRealtime();
+  } else {
+    showScreen('auth');
+  }
+
+  // Listen for auth changes
+  db.auth.onAuthStateChange(async (event, session) => {
+    if (event === 'SIGNED_IN' && session) {
+      currentUser = session.user;
+      showScreen('app');
+      await loadAndRender();
+      subscribeRealtime();
+    } else if (event === 'SIGNED_OUT') {
+      currentUser = null;
+      tasks = [];
+      unsubscribeRealtime();
+      showScreen('auth');
+    }
+  });
+}
+
+function showScreen(screen) {
+  document.getElementById('setupScreen').classList.toggle('hidden', screen !== 'setup');
+  document.getElementById('authScreen').classList.toggle('hidden', screen !== 'auth');
+  document.getElementById('appScreen').classList.toggle('hidden', screen !== 'app');
+  if (screen === 'app') {
+    updateUserUI();
+    updateDateDisplay();
+    setupEventListeners();
+  }
+}
+
+// ===== AUTH =====
+function setAuthTab(tab) {
+  const loginTab = document.getElementById('authTabLogin');
+  const registerTab = document.getElementById('authTabRegister');
+  const loginForm = document.getElementById('loginForm');
+  const registerForm = document.getElementById('registerForm');
+  const resetForm = document.getElementById('resetForm');
+
+  hideAuthMessage();
+  loginForm.classList.add('hidden');
+  registerForm.classList.add('hidden');
+  resetForm.classList.add('hidden');
+  loginTab.classList.remove('border-brand-600','text-brand-600');
+  loginTab.classList.add('border-transparent','text-gray-500');
+  registerTab.classList.remove('border-brand-600','text-brand-600');
+  registerTab.classList.add('border-transparent','text-gray-500');
+
+  if (tab === 'login') {
+    loginForm.classList.remove('hidden');
+    loginTab.classList.add('border-brand-600','text-brand-600');
+    loginTab.classList.remove('border-transparent','text-gray-500');
+  } else if (tab === 'register') {
+    registerForm.classList.remove('hidden');
+    registerTab.classList.add('border-brand-600','text-brand-600');
+    registerTab.classList.remove('border-transparent','text-gray-500');
+  }
+}
+
+function showResetPassword() {
+  hideAuthMessage();
+  document.getElementById('loginForm').classList.add('hidden');
+  document.getElementById('registerForm').classList.add('hidden');
+  document.getElementById('resetForm').classList.remove('hidden');
+}
+
+function showAuthMessage(msg, isError = true) {
+  const el = document.getElementById('authMessage');
+  el.textContent = msg;
+  el.className = `mb-4 rounded-xl px-4 py-3 text-sm ${isError ? 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800' : 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 border border-green-200 dark:border-green-800'}`;
+  el.classList.remove('hidden');
+}
+
+function hideAuthMessage() {
+  document.getElementById('authMessage').classList.add('hidden');
+}
+
+function setAuthLoading(btnId, loading) {
+  const btn = document.getElementById(btnId);
+  if (loading) {
+    btn.disabled = true;
+    btn.innerHTML = '<div class="loading-spinner" style="width:18px;height:18px;border-width:2px;"></div><span>Mohon tunggu...</span>';
+  } else {
+    btn.disabled = false;
+    if (btnId === 'loginBtn') btn.innerHTML = '<span>Masuk</span>';
+    else if (btnId === 'registerBtn') btn.innerHTML = '<span>Buat Akun</span>';
+    else if (btnId === 'resetBtn') btn.innerHTML = '<span>Kirim Link Reset</span>';
+  }
+}
+
+async function handleLogin(e) {
+  e.preventDefault();
+  hideAuthMessage();
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  setAuthLoading('loginBtn', true);
+
+  const { error } = await db.auth.signInWithPassword({ email, password });
+  setAuthLoading('loginBtn', false);
+
+  if (error) {
+    const msg = error.message.includes('Invalid login') ? 'Email atau password salah.' :
+                error.message.includes('Email not confirmed') ? 'Email belum dikonfirmasi. Cek inbox kamu.' :
+                error.message;
+    showAuthMessage(msg);
+  }
+}
+
+async function handleRegister(e) {
+  e.preventDefault();
+  hideAuthMessage();
+  const name = document.getElementById('registerName').value.trim();
+  const email = document.getElementById('registerEmail').value.trim();
+  const password = document.getElementById('registerPassword').value;
+  const confirm = document.getElementById('registerPasswordConfirm').value;
+
+  if (password !== confirm) {
+    showAuthMessage('Password tidak cocok.');
+    document.getElementById('registerPasswordConfirm').focus();
+    return;
+  }
+
+  setAuthLoading('registerBtn', true);
+  const { data, error } = await db.auth.signUp({
+    email,
+    password,
+    options: { data: { full_name: name } }
+  });
+  setAuthLoading('registerBtn', false);
+
+  if (error) {
+    const msg = error.message.includes('already registered') ? 'Email sudah terdaftar. Silakan masuk.' :
+                error.message;
+    showAuthMessage(msg);
+  } else if (data?.user?.identities?.length === 0) {
+    showAuthMessage('Email sudah terdaftar. Silakan masuk.');
+  } else if (data?.user && !data?.session) {
+    showAuthMessage('🎉 Akun berhasil dibuat! Cek email kamu untuk konfirmasi.', false);
+  }
+  // If session exists, onAuthStateChange will handle the redirect
+}
+
+async function handleResetPassword(e) {
+  e.preventDefault();
+  hideAuthMessage();
+  const email = document.getElementById('resetEmail').value.trim();
+  setAuthLoading('resetBtn', true);
+
+  const { error } = await db.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + window.location.pathname
+  });
+  setAuthLoading('resetBtn', false);
+
+  if (error) {
+    showAuthMessage(error.message);
+  } else {
+    showAuthMessage('📧 Link reset password sudah dikirim ke email kamu!', false);
+  }
+}
+
+async function handleLogout() {
+  closeUserMenu();
+  await db.auth.signOut();
+}
+
+function togglePasswordVisibility(inputId, btn) {
+  const input = document.getElementById(inputId);
+  const isPassword = input.type === 'password';
+  input.type = isPassword ? 'text' : 'password';
+  btn.innerHTML = isPassword
+    ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>'
+    : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+}
+
+function updateUserUI() {
+  if (!currentUser) return;
+  const name = currentUser.user_metadata?.full_name || currentUser.email?.split('@')[0] || 'User';
+  const email = currentUser.email || '';
+  const initial = (name[0] || '?').toUpperCase();
+
+  document.getElementById('userAvatar').textContent = initial;
+  document.getElementById('userMenuName').textContent = name;
+  document.getElementById('userMenuEmail').textContent = email;
+}
+
+function toggleUserMenu() {
+  document.getElementById('userMenu').classList.toggle('hidden');
+}
+
+function closeUserMenu() {
+  document.getElementById('userMenu').classList.add('hidden');
+}
+
+// ===== SUPABASE DATABASE =====
+function setSyncStatus(status) {
+  const dot = document.getElementById('syncDot');
+  const label = document.getElementById('syncLabel');
+  const container = document.getElementById('syncStatus');
+  dot.className = 'sync-dot ' + status;
+  if (status === 'online') { label.textContent = 'Sync'; container.dataset.tip = 'Tersinkron'; }
+  else if (status === 'syncing') { label.textContent = 'Syncing...'; container.dataset.tip = 'Menyinkronkan...'; }
+  else { label.textContent = 'Offline'; container.dataset.tip = 'Tidak terhubung'; }
+}
+
+async function fetchTasks() {
+  setSyncStatus('syncing');
+  const { data, error } = await db
+    .from('tasks')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Fetch error:', error);
+    setSyncStatus('offline');
+    showToast('⚠️ Gagal memuat tugas');
+    return [];
+  }
+
+  setSyncStatus('online');
+  return data.map(mapDbToTask);
+}
+
+async function createTaskInDb(taskData) {
+  setSyncStatus('syncing');
+  const dbData = {
+    user_id: currentUser.id,
+    title: taskData.title,
+    description: taskData.description || '',
+    category: taskData.category,
+    priority: taskData.priority,
+    due_date: taskData.dueDate || null,
+    completed: false,
+    subtasks: JSON.stringify(taskData.subtasks || []),
+    position: tasks.length
+  };
+
+  const { data, error } = await db.from('tasks').insert(dbData).select().single();
+  setSyncStatus(error ? 'offline' : 'online');
+
+  if (error) {
+    console.error('Create error:', error);
+    showToast('⚠️ Gagal menyimpan tugas');
+    return null;
+  }
+  return mapDbToTask(data);
+}
+
+async function updateTaskInDb(id, updates) {
+  setSyncStatus('syncing');
+  const dbUpdates = {};
+  if (updates.title !== undefined) dbUpdates.title = updates.title;
+  if (updates.description !== undefined) dbUpdates.description = updates.description;
+  if (updates.category !== undefined) dbUpdates.category = updates.category;
+  if (updates.priority !== undefined) dbUpdates.priority = updates.priority;
+  if (updates.dueDate !== undefined) dbUpdates.due_date = updates.dueDate || null;
+  if (updates.completed !== undefined) dbUpdates.completed = updates.completed;
+  if (updates.subtasks !== undefined) dbUpdates.subtasks = JSON.stringify(updates.subtasks);
+  if (updates.position !== undefined) dbUpdates.position = updates.position;
+
+  const { error } = await db.from('tasks').update(dbUpdates).eq('id', id);
+  setSyncStatus(error ? 'offline' : 'online');
+
+  if (error) {
+    console.error('Update error:', error);
+    showToast('⚠️ Gagal memperbarui tugas');
+    return false;
+  }
+  return true;
+}
+
+async function deleteTaskInDb(id) {
+  setSyncStatus('syncing');
+  const { error } = await db.from('tasks').delete().eq('id', id);
+  setSyncStatus(error ? 'offline' : 'online');
+
+  if (error) {
+    console.error('Delete error:', error);
+    showToast('⚠️ Gagal menghapus tugas');
+    return false;
+  }
+  return true;
+}
+
+async function deleteCompletedInDb() {
+  setSyncStatus('syncing');
+  const { error } = await db.from('tasks').delete().eq('completed', true).eq('user_id', currentUser.id);
+  setSyncStatus(error ? 'offline' : 'online');
+  return !error;
+}
+
+function mapDbToTask(row) {
+  let subtasks = [];
+  try {
+    subtasks = typeof row.subtasks === 'string' ? JSON.parse(row.subtasks) : (row.subtasks || []);
+  } catch { subtasks = []; }
+
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description || '',
+    category: row.category || 'personal',
+    priority: row.priority || 'medium',
+    dueDate: row.due_date || null,
+    completed: row.completed || false,
+    subtasks,
+    position: row.position || 0,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+// ===== REALTIME SYNC =====
+function subscribeRealtime() {
+  if (realtimeChannel) realtimeChannel.unsubscribe();
+
+  realtimeChannel = db.channel('tasks-changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${currentUser.id}` },
+      (payload) => {
+        handleRealtimeChange(payload);
+      }
+    )
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') setSyncStatus('online');
+      else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') setSyncStatus('offline');
+    });
+}
+
+function unsubscribeRealtime() {
+  if (realtimeChannel) {
+    realtimeChannel.unsubscribe();
+    realtimeChannel = null;
+  }
+}
+
+function handleRealtimeChange(payload) {
+  if (isSyncing) return; // Prevent loop from own changes
+
+  const { eventType, new: newRow, old: oldRow } = payload;
+
+  if (eventType === 'INSERT') {
+    const task = mapDbToTask(newRow);
+    if (!tasks.find(t => t.id === task.id)) {
+      tasks.unshift(task);
+      render();
+      showToast('🔄 Tugas baru disinkronkan');
+    }
+  } else if (eventType === 'UPDATE') {
+    const idx = tasks.findIndex(t => t.id === newRow.id);
+    if (idx !== -1) {
+      tasks[idx] = mapDbToTask(newRow);
+      render();
+    }
+  } else if (eventType === 'DELETE') {
+    const id = oldRow?.id;
+    if (id) {
+      tasks = tasks.filter(t => t.id !== id);
+      render();
+    }
+  }
+}
+
+// ===== LOAD & RENDER =====
+async function loadAndRender() {
+  document.getElementById('appLoading').classList.remove('hidden');
+  document.getElementById('appContent').classList.add('hidden');
+
+  tasks = await fetchTasks();
+
+  document.getElementById('appLoading').classList.add('hidden');
+  document.getElementById('appContent').classList.remove('hidden');
+  render();
+}
+
+// ===== EVENT LISTENERS =====
+let listenersSetup = false;
+function setupEventListeners() {
+  if (listenersSetup) return;
+  listenersSetup = true;
+
+  document.getElementById('searchInput').addEventListener('input', render);
+  document.getElementById('filterCategory').addEventListener('change', render);
+  document.getElementById('filterPriority').addEventListener('change', render);
+  document.getElementById('sortSelect').addEventListener('change', render);
+  document.getElementById('taskTitle').addEventListener('input', e => {
+    document.getElementById('titleCharCount').textContent = e.target.value.length;
+  });
+  document.getElementById('subtaskInput').addEventListener('keypress', e => { if (e.key==='Enter') addSubtask(); });
+  document.getElementById('taskTitle').addEventListener('keypress', e => { if (e.key==='Enter') { e.preventDefault(); saveTask(); } });
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { closeModal(); closeDeleteModal(); closeUserMenu(); }
+    if ((e.key === 'n' || e.key === 'N') && !isInputFocused()) { e.preventDefault(); openModal(); }
+    if ((e.key === 'k' || e.key === 'K') && (e.ctrlKey || e.metaKey)) { e.preventDefault(); document.getElementById('searchInput').focus(); }
+  });
+
+  document.addEventListener('click', e => {
+    const userMenuContainer = document.getElementById('userMenuContainer');
+    if (userMenuContainer && !userMenuContainer.contains(e.target)) closeUserMenu();
+  });
+}
+
+function isInputFocused() {
+  const tag = document.activeElement?.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+}
+
+function updateDateDisplay() {
+  const now = new Date();
+  const options = { weekday:'long', day:'numeric', month:'long', year:'numeric' };
+  const el = document.getElementById('dateDisplay');
+  if (el) el.textContent = now.toLocaleDateString('id-ID', options);
+}
+
+// ===== TASK CRUD =====
+function openModal(id) {
+  editingId = id || null;
+  tempSubtasks = [];
+
+  if (editingId) {
+    const task = tasks.find(t => t.id === editingId);
+    if (!task) return;
+    document.getElementById('modalTitle').textContent = 'Edit Tugas';
+    document.getElementById('taskTitle').value = task.title;
+    document.getElementById('taskDesc').value = task.description || '';
+    document.getElementById('taskCategory').value = task.category;
+    document.getElementById('taskPriority').value = task.priority;
+    document.getElementById('taskDueDate').value = task.dueDate || '';
+    tempSubtasks = [...(task.subtasks || []).map(s => ({...s}))];
+    document.getElementById('titleCharCount').textContent = task.title.length;
+  } else {
+    document.getElementById('modalTitle').textContent = 'Tugas Baru';
+    document.getElementById('taskTitle').value = '';
+    document.getElementById('taskDesc').value = '';
+    document.getElementById('taskCategory').value = 'personal';
+    document.getElementById('taskPriority').value = 'medium';
+    document.getElementById('taskDueDate').value = '';
+    document.getElementById('titleCharCount').textContent = '0';
+  }
+
+  renderSubtasks();
+  document.getElementById('modalOverlay').classList.remove('hidden');
+  setTimeout(() => document.getElementById('taskTitle').focus(), 100);
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').classList.add('hidden');
+  editingId = null;
+  tempSubtasks = [];
+}
+
+async function saveTask() {
+  const title = document.getElementById('taskTitle').value.trim();
+  if (!title) {
+    showToast('⚠️ Judul tugas wajib diisi!');
+    document.getElementById('taskTitle').classList.add('shake');
+    setTimeout(() => document.getElementById('taskTitle').classList.remove('shake'), 300);
+    document.getElementById('taskTitle').focus();
+    return;
+  }
+
+  const btn = document.getElementById('saveTaskBtn');
+  btn.innerHTML = '<div class="loading-spinner" style="width:18px;height:18px;border-width:2px;"></div>';
+  btn.disabled = true;
+
+  const taskData = {
+    title,
+    description: document.getElementById('taskDesc').value.trim(),
+    category: document.getElementById('taskCategory').value,
+    priority: document.getElementById('taskPriority').value,
+    dueDate: document.getElementById('taskDueDate').value || null,
+    subtasks: [...tempSubtasks],
+  };
+
+  isSyncing = true;
+
+  if (editingId) {
+    const success = await updateTaskInDb(editingId, taskData);
+    if (success) {
+      const idx = tasks.findIndex(t => t.id === editingId);
+      if (idx !== -1) tasks[idx] = { ...tasks[idx], ...taskData, updatedAt: new Date().toISOString() };
+      showToast('✅ Tugas diperbarui!');
+    }
+  } else {
+    const newTask = await createTaskInDb(taskData);
+    if (newTask) {
+      tasks.unshift(newTask);
+      showToast('✅ Tugas ditambahkan!');
+    }
+  }
+
+  isSyncing = false;
+  btn.innerHTML = '<span>💾 Simpan</span>';
+  btn.disabled = false;
+  closeModal();
+  render();
+}
+
+async function toggleTask(id) {
+  const task = tasks.find(t => t.id === id);
+  if (!task) return;
+
+  const newCompleted = !task.completed;
+  const newSubtasks = newCompleted ? task.subtasks.map(s => ({ ...s, done: true })) : task.subtasks;
+
+  isSyncing = true;
+  const success = await updateTaskInDb(id, { completed: newCompleted, subtasks: newSubtasks });
+  isSyncing = false;
+
+  if (success) {
+    task.completed = newCompleted;
+    task.subtasks = newSubtasks;
+    if (newCompleted) spawnConfetti();
+    render();
+  }
+}
+
+async function toggleSubtaskInList(taskId, subIdx) {
+  const task = tasks.find(t => t.id === taskId);
+  if (!task || !task.subtasks[subIdx]) return;
+
+  task.subtasks[subIdx].done = !task.subtasks[subIdx].done;
+  const allDone = task.subtasks.every(s => s.done);
+  if (allDone && task.subtasks.length > 0) {
+    task.completed = true;
+    spawnConfetti();
+  }
+
+  isSyncing = true;
+  await updateTaskInDb(taskId, { completed: task.completed, subtasks: task.subtasks });
+  isSyncing = false;
+  render();
+}
+
+function requestDelete(id) {
+  deleteId = id;
+  const task = tasks.find(t => t.id === id);
+  document.getElementById('deleteTaskName').textContent = `"${task?.title}" akan dihapus secara permanen.`;
+  document.getElementById('deleteModal').classList.remove('hidden');
+}
+
+function closeDeleteModal() {
+  document.getElementById('deleteModal').classList.add('hidden');
+  deleteId = null;
+}
+
+async function confirmDelete() {
+  if (!deleteId) return;
+  isSyncing = true;
+  const success = await deleteTaskInDb(deleteId);
+  isSyncing = false;
+
+  if (success) {
+    tasks = tasks.filter(t => t.id !== deleteId);
+    showToast('🗑️ Tugas dihapus!');
+  }
+  closeDeleteModal();
+  render();
+}
+
+async function clearCompleted() {
+  const count = tasks.filter(t => t.completed).length;
+  if (count === 0) return;
+
+  isSyncing = true;
+  const success = await deleteCompletedInDb();
+  isSyncing = false;
+
+  if (success) {
+    tasks = tasks.filter(t => !t.completed);
+    showToast(`🗑️ ${count} tugas selesai dihapus!`);
+    render();
+  }
+}
+
+// ===== SUBTASKS =====
+function addSubtask() {
+  const input = document.getElementById('subtaskInput');
+  const text = input.value.trim();
+  if (!text) return;
+  if (tempSubtasks.length >= 10) { showToast('⚠️ Maksimal 10 sub-tugas!'); return; }
+  tempSubtasks.push({ text, done: false });
+  input.value = '';
+  renderSubtasks();
+  input.focus();
+}
+
+function removeSubtask(idx) {
+  tempSubtasks.splice(idx, 1);
+  renderSubtasks();
+}
+
+function renderSubtasks() {
+  document.getElementById('subtaskList').innerHTML = tempSubtasks.map((s,i) => `
+    <div class="flex items-center gap-2 bg-gray-50 dark:bg-gray-800 rounded-lg px-3 py-2 task-enter">
+      <span class="text-sm flex-1 ${s.done?'line-through text-gray-400':''}">${escapeHtml(s.text)}</span>
+      <button onclick="removeSubtask(${i})" class="text-gray-400 hover:text-red-500 transition p-0.5">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+  `).join('');
+}
+
+// ===== FILTERING & SORTING =====
+function getFilteredTasks() {
+  const search = document.getElementById('searchInput').value.toLowerCase();
+  const catFilter = document.getElementById('filterCategory').value;
+  const priFilter = document.getElementById('filterPriority').value;
+  const sort = document.getElementById('sortSelect').value;
+
+  let filtered = [...tasks];
+  if (currentTab === 'active') filtered = filtered.filter(t => !t.completed);
+  if (currentTab === 'completed') filtered = filtered.filter(t => t.completed);
+  if (search) filtered = filtered.filter(t => t.title.toLowerCase().includes(search) || (t.description||'').toLowerCase().includes(search));
+  if (catFilter !== 'all') filtered = filtered.filter(t => t.category === catFilter);
+  if (priFilter !== 'all') filtered = filtered.filter(t => t.priority === priFilter);
+
+  const po = { high:0, medium:1, low:2 };
+  filtered.sort((a,b) => {
+    if (a.completed !== b.completed) return a.completed ? 1 : -1;
+    switch(sort) {
+      case 'newest': return new Date(b.createdAt) - new Date(a.createdAt);
+      case 'oldest': return new Date(a.createdAt) - new Date(b.createdAt);
+      case 'priority': return po[a.priority] - po[b.priority];
+      case 'dueDate':
+        if (!a.dueDate && !b.dueDate) return 0;
+        if (!a.dueDate) return 1;
+        if (!b.dueDate) return -1;
+        return new Date(a.dueDate) - new Date(b.dueDate);
+      case 'alphabetical': return a.title.localeCompare(b.title,'id');
+      default: return 0;
+    }
+  });
+  return filtered;
+}
+
+// ===== RENDER =====
+function render() {
+  const filtered = getFilteredTasks();
+  const container = document.getElementById('taskList');
+  const emptyState = document.getElementById('emptyState');
+  const noResults = document.getElementById('noResults');
+  const clearBtn = document.getElementById('clearCompleted');
+
+  const total = tasks.length;
+  const done = tasks.filter(t => t.completed).length;
+  const pending = total - done;
+  const overdue = tasks.filter(t => !t.completed && t.dueDate && new Date(t.dueDate) < new Date(new Date().toDateString())).length;
+
+  document.getElementById('statTotal').textContent = total;
+  document.getElementById('statPending').textContent = pending;
+  document.getElementById('statDone').textContent = done;
+  document.getElementById('statOverdue').textContent = overdue;
+
+  const pct = total > 0 ? Math.round((done/total)*100) : 0;
+  document.getElementById('progressPercent').textContent = pct + '%';
+  document.getElementById('progressBar').style.width = pct + '%';
+  document.getElementById('progressText').textContent = `${done} dari ${total} tugas selesai`;
+  const circ = 2 * Math.PI * 20;
+  document.getElementById('progressCircle').style.strokeDashoffset = circ - (pct/100)*circ;
+
+  clearBtn.classList.toggle('hidden', done === 0);
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.toggle('tab-active', btn.dataset.tab === currentTab);
+  });
+
+  if (tasks.length === 0) {
+    container.innerHTML = '';
+    emptyState.classList.remove('hidden');
+    noResults.classList.add('hidden');
+    return;
+  }
+  emptyState.classList.add('hidden');
+  if (filtered.length === 0) {
+    container.innerHTML = '';
+    noResults.classList.remove('hidden');
+    return;
+  }
+  noResults.classList.add('hidden');
+  container.innerHTML = filtered.map(t => renderTask(t)).join('');
+}
+
+function renderTask(task) {
+  const cat = CATEGORIES[task.category] || CATEGORIES.other;
+  const isOverdue = !task.completed && task.dueDate && new Date(task.dueDate) < new Date(new Date().toDateString());
+  const isToday = task.dueDate === new Date().toISOString().split('T')[0];
+  const sd = (task.subtasks||[]).filter(s=>s.done).length;
+  const st = (task.subtasks||[]).length;
+
+  let dueDateLabel = '';
+  if (task.dueDate) {
+    const d = new Date(task.dueDate);
+    const opts = { day:'numeric', month:'short' };
+    if (isToday) dueDateLabel = '📅 Hari ini';
+    else if (isOverdue) dueDateLabel = `⚠️ ${d.toLocaleDateString('id-ID',opts)}`;
+    else dueDateLabel = `📅 ${d.toLocaleDateString('id-ID',opts)}`;
+  }
+
+  return `
+    <div class="group bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 shadow-sm hover:shadow-md transition-all task-enter priority-${task.priority} ${task.completed?'opacity-70':''} ${isOverdue?'border-red-300 dark:border-red-900':''}"
+      draggable="true" ondragstart="onDragStart(event,'${task.id}')" ondragend="onDragEnd(event)" ondragover="onDragOver(event)" ondrop="onDrop(event,'${task.id}')">
+      <div class="flex items-start gap-3">
+        <div class="custom-check ${task.completed?'checked check-animate':''} mt-0.5" onclick="toggleTask('${task.id}')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-start justify-between gap-2">
+            <h3 class="text-sm font-medium leading-snug ${task.completed?'line-through text-gray-400':''}">${escapeHtml(task.title)}</h3>
+            <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+              <button onclick="openModal('${task.id}')" class="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition" title="Edit">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </button>
+              <button onclick="requestDelete('${task.id}')" class="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-500 transition" title="Hapus">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+              </button>
+            </div>
+          </div>
+          ${task.description ? `<p class="text-xs text-gray-500 mt-1 line-clamp-2">${escapeHtml(task.description)}</p>` : ''}
+          ${st > 0 ? `
+            <div class="mt-2 space-y-1">
+              ${task.subtasks.map((s,i) => `
+                <div class="flex items-center gap-2 cursor-pointer" onclick="toggleSubtaskInList('${task.id}',${i})">
+                  <div class="w-4 h-4 rounded border ${s.done?'bg-brand-600 border-brand-600':'border-gray-300 dark:border-gray-600'} flex items-center justify-center flex-shrink-0">
+                    ${s.done?'<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>':''}
+                  </div>
+                  <span class="text-xs ${s.done?'line-through text-gray-400':''}">${escapeHtml(s.text)}</span>
+                </div>
+              `).join('')}
+              <div class="flex items-center gap-1 mt-1">
+                <div class="flex-1 h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                  <div class="h-full bg-brand-600 rounded-full transition-all" style="width:${st>0?(sd/st*100):0}%"></div>
+                </div>
+                <span class="text-[10px] text-gray-400 font-medium">${sd}/${st}</span>
+              </div>
+            </div>
+          ` : ''}
+          <div class="flex items-center gap-2 mt-2 flex-wrap">
+            <span class="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full cat-${task.category}">${cat.emoji} ${cat.label}</span>
+            ${dueDateLabel ? `<span class="text-[10px] font-medium ${isOverdue?'text-red-500':isToday?'text-amber-500':'text-gray-500'}">${dueDateLabel}</span>` : ''}
+            <span class="text-[10px] text-gray-400 ml-auto">${getTimeAgo(task.createdAt)}</span>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ===== TABS =====
+function setTab(tab) { currentTab = tab; render(); }
+
+// ===== DRAG & DROP =====
+function onDragStart(e,id) { draggedId=id; e.currentTarget.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; }
+function onDragEnd(e) { e.currentTarget.classList.remove('dragging'); document.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over')); draggedId=null; }
+function onDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }
+async function onDrop(e,targetId) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  if (!draggedId || draggedId===targetId) return;
+  const di = tasks.findIndex(t=>t.id===draggedId);
+  const ti = tasks.findIndex(t=>t.id===targetId);
+  if (di===-1||ti===-1) return;
+  const [dragged] = tasks.splice(di,1);
+  tasks.splice(ti,0,dragged);
+  // Update positions in DB
+  isSyncing = true;
+  await Promise.all(tasks.map((t,i) => updateTaskInDb(t.id, { position: i })));
+  isSyncing = false;
+  render();
+}
+
+// ===== CONFETTI =====
+function spawnConfetti() {
+  const colors = ['#ef4444','#f59e0b','#22c55e','#3b82f6','#a855f7','#ec4899'];
+  for (let i=0;i<20;i++) {
+    const p = document.createElement('div');
+    p.className = 'confetti-particle';
+    p.style.left = (Math.random()*100)+'vw';
+    p.style.top = (50+Math.random()*30)+'vh';
+    p.style.background = colors[Math.floor(Math.random()*colors.length)];
+    p.style.animationDelay = (Math.random()*0.3)+'s';
+    document.body.appendChild(p);
+    setTimeout(()=>p.remove(), 1500);
+  }
+}
+
+// ===== TOAST =====
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  document.getElementById('toastMsg').textContent = msg;
+  toast.classList.remove('hidden');
+  clearTimeout(toast._timeout);
+  toast._timeout = setTimeout(()=>toast.classList.add('hidden'), 2500);
+}
+
+// ===== UTILS =====
+function escapeHtml(str) { const d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
+
+function getTimeAgo(dateStr) {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff/60000);
+  if (mins<1) return 'Baru saja';
+  if (mins<60) return `${mins}m lalu`;
+  const hours = Math.floor(mins/60);
+  if (hours<24) return `${hours}j lalu`;
+  const days = Math.floor(hours/24);
+  if (days<7) return `${days}h lalu`;
+  return new Date(dateStr).toLocaleDateString('id-ID',{day:'numeric',month:'short'});
+}
+
+// ===== SERVICE WORKER & PWA INSTALL =====
+function registerServiceWorker() {
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js')
+        .then(reg => {
+          console.log('[PWA] Service Worker terdaftar dengan scope:', reg.scope);
+        })
+        .catch(err => {
+          console.warn('[PWA] Service Worker gagal didaftarkan:', err);
+        });
+    });
+  }
+
+  // Handle shortcut action URL parameter (e.g. ?action=new)
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('action') === 'new') {
+    setTimeout(() => {
+      if (typeof openModal === 'function' && currentUser) {
+        openModal();
+      }
+    }, 800);
+  }
+}
+
+// ===== START =====
+init();
+registerServiceWorker();
+</script>
+</body>
+</html>

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TaskFlow — Generate Icons</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen flex items-center justify-center p-4">
+  <div class="max-w-lg w-full bg-white rounded-2xl shadow-xl p-8 text-center">
+    <h1 class="text-2xl font-bold mb-2">🖼️ TaskFlow Icon Generator</h1>
+    <p class="text-gray-500 text-sm mb-8">Klik tombol di bawah untuk membuat dan mengunduh ikon PNG untuk PWA.</p>
+
+    <div class="grid grid-cols-2 gap-4 mb-8">
+      <!-- Preview canvases -->
+      <div>
+        <canvas id="canvas192" width="192" height="192" class="mx-auto rounded-xl border border-gray-200 mb-2" style="width:96px;height:96px;"></canvas>
+        <p class="text-xs text-gray-500">192×192</p>
+      </div>
+      <div>
+        <canvas id="canvas512" width="512" height="512" class="mx-auto rounded-xl border border-gray-200 mb-2" style="width:96px;height:96px;"></canvas>
+        <p class="text-xs text-gray-500">512×512</p>
+      </div>
+      <div>
+        <canvas id="canvasM192" width="192" height="192" class="mx-auto rounded-xl border border-gray-200 mb-2" style="width:96px;height:96px;"></canvas>
+        <p class="text-xs text-gray-500">192×192 maskable</p>
+      </div>
+      <div>
+        <canvas id="canvasM512" width="512" height="512" class="mx-auto rounded-xl border border-gray-200 mb-2" style="width:96px;height:96px;"></canvas>
+        <p class="text-xs text-gray-500">512×512 maskable</p>
+      </div>
+    </div>
+
+    <button onclick="downloadAll()" class="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium transition shadow-lg shadow-indigo-600/30">
+      ⬇️ Unduh Semua Ikon (4 file)
+    </button>
+    <p class="text-xs text-gray-400 mt-4">Simpan file ke folder <code class="bg-gray-100 px-1.5 py-0.5 rounded">taskflow/icons/</code></p>
+  </div>
+
+  <script>
+    // Draw the TaskFlow icon on a canvas
+    function drawIcon(canvas, size, maskable) {
+      const ctx = canvas.getContext('2d');
+      const s = size;
+      const r = maskable ? 0 : s * 0.1875; // rounded corners for regular, none for maskable
+
+      // Gradient background
+      const grad = ctx.createLinearGradient(0, 0, s, s);
+      grad.addColorStop(0, '#6366f1');
+      grad.addColorStop(1, '#4f46e5');
+
+      // Draw rounded rect
+      ctx.beginPath();
+      if (r > 0) {
+        ctx.moveTo(r, 0);
+        ctx.lineTo(s - r, 0); ctx.quadraticCurveTo(s, 0, s, r);
+        ctx.lineTo(s, s - r); ctx.quadraticCurveTo(s, s, s - r, s);
+        ctx.lineTo(r, s); ctx.quadraticCurveTo(0, s, 0, s - r);
+        ctx.lineTo(0, r); ctx.quadraticCurveTo(0, 0, r, 0);
+      } else {
+        ctx.rect(0, 0, s, s);
+      }
+      ctx.closePath();
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Scale factors
+      const scale = s / 512;
+      const pad = maskable ? s * 0.08 : 0; // extra padding for maskable safe zone
+
+      ctx.save();
+      if (maskable) ctx.translate(pad * 0.3, pad * 0.3);
+
+      const sc = maskable ? scale * 0.85 : scale;
+
+      // Checkbox body
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = 28 * sc;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      roundRect(ctx, 120 * sc + (maskable ? pad : 0), 145 * sc + (maskable ? pad : 0), 230 * sc, 230 * sc, 36 * sc);
+      ctx.stroke();
+
+      // Top-right flap
+      ctx.beginPath();
+      ctx.moveTo((350) * sc + (maskable ? pad : 0), (145) * sc + (maskable ? pad : 0));
+      ctx.lineTo((395) * sc + (maskable ? pad : 0), (105) * sc + (maskable ? pad : 0));
+      ctx.stroke();
+
+      // Checkmark
+      ctx.lineWidth = 38 * sc;
+      ctx.beginPath();
+      ctx.moveTo(175 * sc + (maskable ? pad : 0), 270 * sc + (maskable ? pad : 0));
+      ctx.lineTo(225 * sc + (maskable ? pad : 0), 325 * sc + (maskable ? pad : 0));
+      ctx.lineTo(395 * sc + (maskable ? pad : 0), 135 * sc + (maskable ? pad : 0));
+      ctx.stroke();
+
+      // Task lines
+      ctx.lineWidth = 16 * sc;
+      ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+      ctx.beginPath();
+      ctx.moveTo(135 * sc + (maskable ? pad : 0), 410 * sc + (maskable ? pad : 0));
+      ctx.lineTo(300 * sc + (maskable ? pad : 0), 410 * sc + (maskable ? pad : 0));
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+      ctx.beginPath();
+      ctx.moveTo(135 * sc + (maskable ? pad : 0), 450 * sc + (maskable ? pad : 0));
+      ctx.lineTo(250 * sc + (maskable ? pad : 0), 450 * sc + (maskable ? pad : 0));
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    function roundRect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    }
+
+    function downloadCanvas(canvas, filename) {
+      const link = document.createElement('a');
+      link.download = filename;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
+
+    function downloadAll() {
+      downloadCanvas(document.getElementById('canvas192'), 'icon-192.png');
+      setTimeout(() => downloadCanvas(document.getElementById('canvas512'), 'icon-512.png'), 200);
+      setTimeout(() => downloadCanvas(document.getElementById('canvasM192'), 'icon-maskable-192.png'), 400);
+      setTimeout(() => downloadCanvas(document.getElementById('canvasM512'), 'icon-maskable-512.png'), 600);
+    }
+
+    // Draw previews on load
+    drawIcon(document.getElementById('canvas192'), 192, false);
+    drawIcon(document.getElementById('canvas512'), 512, false);
+    drawIcon(document.getElementById('canvasM192'), 192, true);
+    drawIcon(document.getElementById('canvasM512'), 512, true);
+  </script>
+</body>
+</html>
